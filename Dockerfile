@@ -67,7 +67,9 @@ COPY --from=builder /spirit/scripts/gpu_attach.sh /spirit/bin/gpu_attach
 # Make scripts executable
 RUN chmod +x /spirit/bin/* 2>/dev/null || true
 
-# Create spirit commands wrapper scripts
+# Remove busybox poweroff/reboot and create custom versions with sysrq
+RUN rm -f /sbin/poweroff /sbin/reboot /sbin/halt 2>/dev/null || true
+
 RUN printf '#!/bin/sh\necho "Syncing..."\nsync\necho "Powering off..."\necho o > /proc/sysrq-trigger\n' > /sbin/poweroff && chmod +x /sbin/poweroff
 
 RUN printf '#!/bin/sh\necho "Syncing..."\nsync\necho "Rebooting..."\necho b > /proc/sysrq-trigger\n' > /sbin/reboot && chmod +x /sbin/reboot
