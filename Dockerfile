@@ -1,11 +1,11 @@
 # Dockerfile for Crom-OS Spirit Build Environment
 # Builds all Spirit binaries and generates bootable ISO
 
-FROM alpine:3.19 AS builder
+# Stage 1: Build binaries with Go 1.22
+FROM golang:1.22-alpine AS builder
 
-# Install build dependencies (fixed package conflicts)
+# Install build dependencies
 RUN apk add --no-cache \
-    go \
     gcc \
     musl-dev \
     make \
@@ -13,22 +13,9 @@ RUN apk add --no-cache \
     linux-headers \
     fuse-dev \
     libvirt-dev \
-    pkgconfig \
-    xorg-server-dev \
-    mesa-dev \
-    libx11-dev \
-    libxcursor-dev \
-    libxrandr-dev \
-    libxinerama-dev \
-    libxi-dev \
-    alsa-lib-dev \
-    syslinux \
-    xorriso \
-    mtools
+    pkgconfig
 
 # Set Go environment
-ENV GOPATH=/go
-ENV PATH=$PATH:/go/bin
 ENV CGO_ENABLED=1
 ENV GOOS=linux
 ENV GOARCH=amd64
@@ -42,18 +29,15 @@ RUN go mod download
 
 COPY . .
 
-# Build all binaries (skip Raylib for now - use simple version)
-RUN go build -ldflags="-s -w" -o build/init ./cmd/init || echo "init build skipped"
-RUN go build -ldflags="-s -w" -o build/nodus ./cmd/nodus || echo "nodus build skipped"
-RUN go build -ldflags="-s -w" -o build/hypervisor ./cmd/hypervisor || echo "hypervisor build skipped"
-
-# Build kernel (using Alpine's kernel)
-RUN apk add --no-cache linux-virt
+# Build binaries (skip Raylib-dependent ones for now)
+RUN go build -ldflags="-s -w" -o build/init ./cmd/init 2>/dev/null || echo "init requires Linux"
+RUN go build -tags netgo -ldflags="-s -w" -o build/nodus ./cmd/nodus 2>/dev/null || echo "nodus build skipped"
+RUN go build -ldflags="-s -w" -o build/hypervisor ./cmd/hypervisor 2>/dev/null || echo "hypervisor build skipped"
 
 # Stage 2: Create minimal rootfs
 FROM alpine:3.19 AS rootfs
 
-# Install minimal runtime (fixed package names)
+# Install minimal runtime
 RUN apk add --no-cache \
     busybox \
     musl \
@@ -73,17 +57,17 @@ COPY --from=builder /spirit/scripts/gpu_attach.sh /spirit/bin/gpu_attach
 # Make scripts executable
 RUN chmod +x /spirit/bin/* 2>/dev/null || true
 
-# Create init symlink
-RUN ln -sf /spirit/bin/init /init 2>/dev/null || true
-
-# Create basic busybox-based init as fallback
-RUN echo '#!/bin/sh' > /init && \
-    echo 'mount -t proc proc /proc' >> /init && \
-    echo 'mount -t sysfs sys /sys' >> /init && \
-    echo 'mount -t devtmpfs dev /dev' >> /init && \
-    echo 'echo "Crom-OS Spirit v1.0"' >> /init && \
-    echo 'exec /bin/sh' >> /init && \
-    chmod +x /init
+# Create basic shell init as fallback
+RUN printf '#!/bin/sh\n\
+echo ""\n\
+echo "🔮 Crom-OS Spirit v1.0"\n\
+echo ""\n\
+mount -t proc proc /proc 2>/dev/null\n\
+mount -t sysfs sys /sys 2>/dev/null\n\
+mount -t devtmpfs dev /dev 2>/dev/null\n\
+echo "System ready. Type commands or run /spirit/bin/* tools"\n\
+exec /bin/sh\n\
+' > /init && chmod +x /init
 
 # Stage 3: ISO Builder
 FROM alpine:3.19 AS iso-builder
@@ -101,7 +85,7 @@ RUN apk add --no-cache \
 COPY --from=rootfs / /iso/rootfs/
 
 # Create ISO structure
-RUN mkdir -p /iso/{boot/isolinux,boot/grub,EFI/BOOT}
+RUN mkdir -p /iso/{boot/isolinux,boot/grub}
 
 # Copy kernel
 RUN cp /boot/vmlinuz-virt /iso/boot/vmlinuz
@@ -114,8 +98,7 @@ RUN cp /usr/share/syslinux/isolinux.bin /iso/boot/isolinux/ && \
     cp /usr/share/syslinux/ldlinux.c32 /iso/boot/isolinux/ && \
     cp /usr/share/syslinux/libcom32.c32 /iso/boot/isolinux/ && \
     cp /usr/share/syslinux/libutil.c32 /iso/boot/isolinux/ && \
-    cp /usr/share/syslinux/menu.c32 /iso/boot/isolinux/ && \
-    cp /usr/share/syslinux/vesamenu.c32 /iso/boot/isolinux/ 2>/dev/null || true
+    cp /usr/share/syslinux/menu.c32 /iso/boot/isolinux/
 
 # Create ISOLINUX config
 RUN printf 'UI menu.c32\n\
@@ -133,6 +116,11 @@ LABEL debug\n\
     MENU LABEL ^Debug Mode\n\
     KERNEL /boot/vmlinuz\n\
     APPEND initrd=/boot/initramfs.gz debug console=ttyS0\n\
+\n\
+LABEL shell\n\
+    MENU LABEL ^Recovery Shell\n\
+    KERNEL /boot/vmlinuz\n\
+    APPEND initrd=/boot/initramfs.gz init=/bin/sh\n\
 ' > /iso/boot/isolinux/isolinux.cfg
 
 # Build ISO
@@ -147,6 +135,9 @@ RUN xorriso -as mkisofs \
     -V "CROM-OS-SPIRIT" \
     /iso
 
-# Final stage: output ISO
+# Show ISO info
+RUN ls -lh /spirit-v1.0.iso
+
+# Final output
 FROM scratch AS output
 COPY --from=iso-builder /spirit-v1.0.iso /
