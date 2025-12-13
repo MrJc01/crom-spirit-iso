@@ -61,9 +61,9 @@ RUN chmod +x /spirit/bin/* 2>/dev/null || true
 RUN printf '#!/bin/sh\n\
 clear\n\
 echo ""\n\
-echo "  ╔══════════════════════════════════════╗"\n\
-echo "  ║     🔮 Crom-OS Spirit v1.0 🔮        ║"\n\
-echo "  ╚══════════════════════════════════════╝"\n\
+echo "  ======================================"\n\
+echo "       Crom-OS Spirit v1.0"\n\
+echo "  ======================================"\n\
 echo ""\n\
 \n\
 # Mount essential filesystems\n\
@@ -80,22 +80,15 @@ echo "[OK] Filesystems mounted"\n\
 echo "[OK] System ready"\n\
 echo ""\n\
 echo "Available commands:"\n\
-echo "  /spirit/bin/nodus      - P2P Storage Daemon"\n\
+echo "  /spirit/bin/nodus      - P2P Storage"\n\
 echo "  /spirit/bin/hypervisor - VM Manager"\n\
 echo "  /spirit/bin/gpu_detach - GPU Passthrough"\n\
 echo ""\n\
-echo "Type commands below. Use Ctrl+Alt+Del to reboot."\n\
+echo "Type help for shell commands."\n\
 echo ""\n\
 \n\
-# Spawn interactive shell\n\
-setsid cttyhack /bin/sh\n\
-\n\
-# If shell exits, restart it (PID 1 must NEVER exit)\n\
-while true; do\n\
-    echo "Shell exited. Restarting..."\n\
-    sleep 1\n\
-    setsid cttyhack /bin/sh\n\
-done\n\
+# Run shell in foreground (exec replaces PID 1)\n\
+exec /bin/sh\n\
 ' > /init && chmod +x /init
 
 # Stage 3: ISO Builder
