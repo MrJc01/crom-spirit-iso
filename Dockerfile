@@ -29,8 +29,8 @@ RUN go mod download
 
 COPY . .
 
-# Build binaries (skip Raylib-dependent ones for now)
-RUN go build -ldflags="-s -w" -o build/init ./cmd/init 2>/dev/null || echo "init requires Linux"
+# Build binaries
+RUN go build -ldflags="-s -w" -o build/init ./cmd/init 2>/dev/null || echo "init build skipped"
 RUN go build -tags netgo -ldflags="-s -w" -o build/nodus ./cmd/nodus 2>/dev/null || echo "nodus build skipped"
 RUN go build -ldflags="-s -w" -o build/hypervisor ./cmd/hypervisor 2>/dev/null || echo "hypervisor build skipped"
 
@@ -49,7 +49,7 @@ RUN apk add --no-cache \
 # Create directory structure
 RUN mkdir -p /spirit/{bin,etc,proc,sys,dev,tmp,run,mnt/nodus,var/lib/spirit,root}
 
-# Copy binaries from builder (if they exist)
+# Copy binaries from builder
 COPY --from=builder /spirit/build/ /spirit/bin/ 
 COPY --from=builder /spirit/scripts/gpu_detach.sh /spirit/bin/gpu_detach
 COPY --from=builder /spirit/scripts/gpu_attach.sh /spirit/bin/gpu_attach
@@ -57,7 +57,7 @@ COPY --from=builder /spirit/scripts/gpu_attach.sh /spirit/bin/gpu_attach
 # Make scripts executable
 RUN chmod +x /spirit/bin/* 2>/dev/null || true
 
-# Create basic shell init as fallback
+# Create basic shell init
 RUN printf '#!/bin/sh\n\
 echo ""\n\
 echo "🔮 Crom-OS Spirit v1.0"\n\
@@ -72,7 +72,7 @@ exec /bin/sh\n\
 # Stage 3: ISO Builder
 FROM alpine:3.19 AS iso-builder
 
-# Install ISO tools
+# Install ISO tools AND kernel FIRST
 RUN apk add --no-cache \
     xorriso \
     syslinux \
@@ -81,14 +81,14 @@ RUN apk add --no-cache \
     gzip \
     linux-virt
 
+# Create ISO structure AFTER packages are installed
+RUN mkdir -p /iso/boot/isolinux /iso/boot/grub
+
+# Copy kernel (now linux-virt is installed)
+RUN cp /boot/vmlinuz-virt /iso/boot/vmlinuz
+
 # Copy rootfs from previous stage
 COPY --from=rootfs / /iso/rootfs/
-
-# Create ISO structure
-RUN mkdir -p /iso/{boot/isolinux,boot/grub}
-
-# Copy kernel
-RUN cp /boot/vmlinuz-virt /iso/boot/vmlinuz
 
 # Create initramfs from rootfs
 RUN cd /iso/rootfs && find . | cpio -o -H newc 2>/dev/null | gzip > /iso/boot/initramfs.gz
@@ -136,7 +136,7 @@ RUN xorriso -as mkisofs \
     /iso
 
 # Show ISO info
-RUN ls -lh /spirit-v1.0.iso
+RUN ls -lh /spirit-v1.0.iso && echo "✅ ISO built successfully!"
 
 # Final output
 FROM scratch AS output
