@@ -1,0 +1,40 @@
+version: "3.8"
+
+services:
+  # Build the Spirit ISO
+  build-iso:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: output
+    volumes:
+      - ./output:/output
+    command: ["cp", "/spirit-v1.0.iso", "/output/"]
+
+  # Development container for testing
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    volumes:
+      - .:/spirit
+      - ./build:/spirit/build
+    working_dir: /spirit
+    command: ["make", "all"]
+
+  # Test the ISO in QEMU
+  test-qemu:
+    image: tianon/qemu:latest
+    volumes:
+      - ./output:/iso:ro
+    ports:
+      - "5900:5900" # VNC
+    command: >
+      qemu-system-x86_64
+      -cdrom /iso/spirit-v1.0.iso
+      -m 2048
+      -enable-kvm
+      -cpu host
+      -vnc :0
+      -boot d
