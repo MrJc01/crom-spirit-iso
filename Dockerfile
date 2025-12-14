@@ -62,6 +62,9 @@ COPY --from=builder /spirit/scripts/gpu_detach.sh /spirit/bin/gpu_detach
 COPY --from=builder /spirit/scripts/gpu_attach.sh /spirit/bin/gpu_attach
 COPY --from=builder /spirit/scripts/test_system.sh /spirit/bin/test
 
+# Make all scripts executable
+RUN chmod +x /spirit/bin/* 2>/dev/null || true
+
 # ============================================
 # SPIRIT TOOLS - NODUS
 # ============================================
@@ -104,12 +107,12 @@ case "$1" in\n\
     sync\n\
     echo "${GREEN}[✓] Sync complete${RESET}"\n\
     ;;\n\
-  status)\n\
+  status)
     echo "Nodus Status:"\n\
     echo "  Mode:    ${GREEN}Standalone${RESET}"\n\
     echo "  Cache:   /mnt/nodus"\n\
     echo "  Peers:   0"\n\
-    echo "  Storage: $(df -h /mnt/nodus 2>/dev/null | tail -1 | awk '"'"'{print $3"/"$2}'"'"' || echo 'Not mounted')"\n\
+    echo "  Storage: $(df -h /mnt/nodus 2>/dev/null | tail -1 | awk '"'"'{print $3"/"$2}'"'"' || echo '"'"'Not mounted'"'"')"\n\
     ;;\n\
   *)\n\
     echo "Usage: nodus <command>"\n\
@@ -123,6 +126,7 @@ case "$1" in\n\
     ;;\n\
 esac\n\
 echo ""\n\
+exit 0\n\
 ' > /spirit/bin/nodus && chmod +x /spirit/bin/nodus
 
 # ============================================
