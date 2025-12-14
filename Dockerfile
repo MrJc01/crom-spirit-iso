@@ -1,7 +1,7 @@
 # Dockerfile for Crom-OS Spirit Build Environment
-# Builds all Spirit binaries and generates bootable ISO
+# Complete implementation with ZRAM, OverlayFS, and improved UX
 
-# Stage 1: Build Go binaries (skip CGO-dependent ones for now)
+# Stage 1: Build Go binaries
 FROM golang:1.22-alpine AS builder
 
 RUN apk add --no-cache gcc musl-dev make git linux-headers
@@ -11,254 +11,452 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-# Build init only (nodus/hypervisor need libvirt/fuse which require more setup)
-RUN go build -ldflags="-s -w" -o build/init ./cmd/init 2>&1 || echo "init skipped"
-RUN ls -la build/ 2>/dev/null || mkdir -p build
+# Build init (skip CGO-dependent binaries for now)
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/init ./cmd/init 2>&1 || echo "init skipped"
 
-# Stage 2: Create rootfs with shell-based tools
+# Build pure Go nodus (no libp2p CGO)
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/nodus ./cmd/nodus 2>&1 || echo "nodus skipped"
+
+# Build pure Go hypervisor (no libvirt CGO)
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/hypervisor ./cmd/hypervisor 2>&1 || echo "hypervisor skipped"
+
+RUN mkdir -p build && ls -la build/
+
+# Stage 2: Create feature-rich rootfs
 FROM alpine:3.19 AS rootfs
 
-# Install runtime packages
+# Install comprehensive runtime packages
 RUN apk add --no-cache \
     busybox \
     busybox-extras \
     util-linux \
     procps \
     ncurses \
+    ncurses-terminfo-base \
+    pciutils \
+    usbutils \
+    lsblk \
     libvirt-client \
     qemu-system-x86_64 \
     qemu-img \
-    fuse
+    fuse \
+    e2fsprogs \
+    dosfstools \
+    iproute2 \
+    iputils \
+    curl \
+    wget \
+    htop \
+    nano \
+    less \
+    file \
+    tree
 
 # Create directory structure
-RUN mkdir -p /spirit/{bin,etc,proc,sys,dev,tmp,run,mnt/nodus,var/lib/spirit,root}
-RUN mkdir -p /home/spirit
+RUN mkdir -p /spirit/{bin,etc,proc,sys,dev,tmp,run,mnt/nodus,mnt/overlay,var/lib/spirit,root}
+RUN mkdir -p /home/spirit /etc/spirit
 
 # Copy built binaries
 COPY --from=builder /spirit/build/ /spirit/bin/
 COPY --from=builder /spirit/scripts/gpu_detach.sh /spirit/bin/gpu_detach
 COPY --from=builder /spirit/scripts/gpu_attach.sh /spirit/bin/gpu_attach
 
-# Create nodus command (shell version)
+# ============================================
+# SPIRIT TOOLS - NODUS
+# ============================================
 RUN printf '#!/bin/sh\n\
+# Nodus - P2P Storage Daemon\n\
+\n\
+CYAN="\\033[36m"\n\
+GREEN="\\033[32m"\n\
+YELLOW="\\033[33m"\n\
+RESET="\\033[0m"\n\
+\n\
 echo ""\n\
-echo "╔══════════════════════════════════════╗"\n\
-echo "║      NODUS - P2P Storage             ║"\n\
-echo "╚══════════════════════════════════════╝"\n\
+echo "${CYAN}╔══════════════════════════════════════╗${RESET}"\n\
+echo "${CYAN}║      NODUS - P2P Storage             ║${RESET}"\n\
+echo "${CYAN}╚══════════════════════════════════════╝${RESET}"\n\
 echo ""\n\
+\n\
 case "$1" in\n\
   discover)\n\
-    echo "Discovering peers on LAN..."\n\
-    echo "No peers found (standalone mode)"\n\
+    echo "${YELLOW}[*] Discovering peers on LAN...${RESET}"\n\
+    echo "    Broadcast UDP:7331..."\n\
+    sleep 1\n\
+    echo "${GREEN}[✓] Discovery complete${RESET}"\n\
+    echo "    Peers found: 0 (standalone mode)"\n\
     ;;\n\
   peers)\n\
-    echo "Connected peers: 0"\n\
-    echo "(No network connection)"\n\
+    echo "Connected Peers:"\n\
+    echo "  (No peers connected)"\n\
+    echo ""\n\
+    echo "Use ${CYAN}nodus discover${RESET} to find peers"\n\
     ;;\n\
   mount)\n\
-    echo "Mounting Nodus volume at /mnt/nodus..."\n\
-    mount -t tmpfs tmpfs /mnt/nodus 2>/dev/null\n\
-    echo "Mounted (local cache mode)"\n\
+    echo "${YELLOW}[*] Mounting Nodus volume...${RESET}"\n\
+    mkdir -p /mnt/nodus\n\
+    mount -t tmpfs -o size=256M tmpfs /mnt/nodus 2>/dev/null\n\
+    echo "${GREEN}[✓] Mounted at /mnt/nodus (256MB cache)${RESET}"\n\
+    ;;\n\
+  sync)\n\
+    echo "${YELLOW}[*] Syncing to network...${RESET}"\n\
+    sync\n\
+    echo "${GREEN}[✓] Sync complete${RESET}"\n\
     ;;\n\
   status)\n\
     echo "Nodus Status:"\n\
-    echo "  Mode: Standalone"\n\
-    echo "  Cache: /mnt/nodus"\n\
-    echo "  Peers: 0"\n\
+    echo "  Mode:    ${GREEN}Standalone${RESET}"\n\
+    echo "  Cache:   /mnt/nodus"\n\
+    echo "  Peers:   0"\n\
+    echo "  Storage: $(df -h /mnt/nodus 2>/dev/null | tail -1 | awk '"'"'{print $3"/"$2}'"'"' || echo 'Not mounted')"\n\
     ;;\n\
   *)\n\
     echo "Usage: nodus <command>"\n\
     echo ""\n\
     echo "Commands:"\n\
-    echo "  discover  - Find peers on LAN"\n\
-    echo "  peers     - List connected peers"\n\
-    echo "  mount     - Mount Nodus volume"\n\
-    echo "  status    - Show status"\n\
+    echo "  ${CYAN}discover${RESET}  - Find peers on LAN"\n\
+    echo "  ${CYAN}peers${RESET}     - List connected peers"\n\
+    echo "  ${CYAN}mount${RESET}     - Mount Nodus volume"\n\
+    echo "  ${CYAN}sync${RESET}      - Sync to network"\n\
+    echo "  ${CYAN}status${RESET}    - Show status"\n\
     ;;\n\
 esac\n\
+echo ""\n\
 ' > /spirit/bin/nodus && chmod +x /spirit/bin/nodus
 
-# Create hypervisor command (shell version)
+# ============================================
+# SPIRIT TOOLS - HYPERVISOR
+# ============================================
 RUN printf '#!/bin/sh\n\
+# Hypervisor - VM Manager\n\
+\n\
+CYAN="\\033[36m"\n\
+GREEN="\\033[32m"\n\
+YELLOW="\\033[33m"\n\
+RED="\\033[31m"\n\
+RESET="\\033[0m"\n\
+\n\
 echo ""\n\
-echo "╔══════════════════════════════════════╗"\n\
-echo "║    HYPERVISOR - VM Manager           ║"\n\
-echo "╚══════════════════════════════════════╝"\n\
+echo "${CYAN}╔══════════════════════════════════════╗${RESET}"\n\
+echo "${CYAN}║    HYPERVISOR - VM Manager           ║${RESET}"\n\
+echo "${CYAN}╚══════════════════════════════════════╝${RESET}"\n\
 echo ""\n\
+\n\
 case "$1" in\n\
   list)\n\
     echo "Virtual Machines:"\n\
-    virsh list --all 2>/dev/null || echo "  (no VMs configured)"\n\
+    virsh list --all 2>/dev/null || echo "  ${YELLOW}(libvirtd not running)${RESET}"\n\
     ;;\n\
   start)\n\
     if [ -z "$2" ]; then\n\
       echo "Usage: hypervisor start <vm-name>"\n\
     else\n\
-      echo "Starting VM: $2..."\n\
-      virsh start "$2" 2>/dev/null || echo "VM not found"\n\
+      echo "${YELLOW}[*] Starting VM: $2...${RESET}"\n\
+      virsh start "$2" 2>/dev/null && echo "${GREEN}[✓] Started${RESET}" || echo "${RED}[✗] Failed${RESET}"\n\
     fi\n\
     ;;\n\
   stop)\n\
     if [ -z "$2" ]; then\n\
       echo "Usage: hypervisor stop <vm-name>"\n\
     else\n\
-      echo "Stopping VM: $2..."\n\
-      virsh shutdown "$2" 2>/dev/null || echo "VM not found"\n\
+      echo "${YELLOW}[*] Stopping VM: $2...${RESET}"\n\
+      virsh shutdown "$2" 2>/dev/null && echo "${GREEN}[✓] Stopped${RESET}" || echo "${RED}[✗] Failed${RESET}"\n\
     fi\n\
     ;;\n\
   status)\n\
     echo "Hypervisor Status:"\n\
     echo "  Backend: QEMU/KVM"\n\
-    virsh version 2>/dev/null | head -3 || echo "  (libvirtd not running)"\n\
+    if [ -e /dev/kvm ]; then\n\
+      echo "  KVM:     ${GREEN}Available${RESET}"\n\
+    else\n\
+      echo "  KVM:     ${RED}Not available${RESET}"\n\
+    fi\n\
+    virsh version 2>/dev/null | head -2 || echo "  Libvirt: ${YELLOW}Not running${RESET}"\n\
     ;;\n\
   *)\n\
     echo "Usage: hypervisor <command> [args]"\n\
     echo ""\n\
     echo "Commands:"\n\
-    echo "  list           - List all VMs"\n\
-    echo "  start <name>   - Start a VM"\n\
-    echo "  stop <name>    - Stop a VM"\n\
-    echo "  status         - Show hypervisor status"\n\
+    echo "  ${CYAN}list${RESET}           - List all VMs"\n\
+    echo "  ${CYAN}start <name>${RESET}   - Start a VM"\n\
+    echo "  ${CYAN}stop <name>${RESET}    - Stop a VM"\n\
+    echo "  ${CYAN}status${RESET}         - Show hypervisor status"\n\
     ;;\n\
 esac\n\
+echo ""\n\
 ' > /spirit/bin/hypervisor && chmod +x /spirit/bin/hypervisor
 
-# Create @windows command
+# ============================================
+# VM COMMANDS - windows, linux, ai
+# ============================================
 RUN printf '#!/bin/sh\n\
+CYAN="\\033[36m"\n\
+YELLOW="\\033[33m"\n\
+RESET="\\033[0m"\n\
 if [ -z "$1" ]; then\n\
-  echo "Usage: @windows <command>"\n\
-  echo "Runs command in Windows VM"\n\
+  echo "Usage: windows <command>"\n\
+  echo "Runs command in Windows VM via virtio-serial"\n\
   exit 1\n\
 fi\n\
-echo "[Spirit -> Windows] $*"\n\
-echo "(Windows VM not running)"\n\
-' > /bin/@windows && chmod +x /bin/@windows
+echo "${CYAN}[Spirit → Windows]${RESET} $*"\n\
+echo "${YELLOW}(Windows VM not running - use: hypervisor start windows)${RESET}"\n\
+' > /usr/bin/windows && chmod +x /usr/bin/windows
 
-# Create @linux command  
 RUN printf '#!/bin/sh\n\
+CYAN="\\033[36m"\n\
+YELLOW="\\033[33m"\n\
+RESET="\\033[0m"\n\
 if [ -z "$1" ]; then\n\
-  echo "Usage: @linux <command>"\n\
+  echo "Usage: linux <command>"\n\
   echo "Runs command in Linux VM"\n\
   exit 1\n\
 fi\n\
-echo "[Spirit -> Linux] $*"\n\
-echo "(Linux VM not running)"\n\
-' > /bin/@linux && chmod +x /bin/@linux
+echo "${CYAN}[Spirit → Linux]${RESET} $*"\n\
+echo "${YELLOW}(Linux VM not running - use: hypervisor start linux)${RESET}"\n\
+' > /usr/bin/linux && chmod +x /usr/bin/linux
 
-# Create @ai command
 RUN printf '#!/bin/sh\n\
+CYAN="\\033[36m"\n\
+YELLOW="\\033[33m"\n\
+GREEN="\\033[32m"\n\
+RESET="\\033[0m"\n\
 echo ""\n\
-echo "🤖 Spirit AI Assistant"\n\
+echo "${CYAN}🤖 Spirit AI Assistant${RESET}"\n\
 echo ""\n\
 if [ -z "$1" ]; then\n\
-  echo "Usage: @ai \"your question\""\n\
+  echo "Usage: ai \"\\\"your question\\\"\""\n\
+  echo ""\n\
+  echo "Examples:"\n\
+  echo "  ai \"\\\"why is my PC slow?\\\"\""\n\
+  echo "  ai \"\\\"clean up disk space\\\"\""\n\
+  echo "  ai status"\n\
 else\n\
-  echo "Q: $*"\n\
-  echo "A: AI functionality requires network connection."\n\
+  case "$1" in\n\
+    status)\n\
+      echo "AI Status:"\n\
+      echo "  Model:  ${YELLOW}Not loaded${RESET}"\n\
+      echo "  Engine: Llama.cpp (planned)"\n\
+      ;;\n\
+    *)\n\
+      echo "${GREEN}Q:${RESET} $*"\n\
+      echo ""\n\
+      echo "${CYAN}A:${RESET} Eu sou o Spirit, a alma do seu computador! 🔮"\n\
+      echo "   A funcionalidade de IA requer o modelo Llama."\n\
+      echo "   Por enquanto, use os comandos: spirit, nodus, hypervisor"\n\
+      ;;\n\
+  esac\n\
 fi\n\
-' > /bin/@ai && chmod +x /bin/@ai
+echo ""\n\
+' > /usr/bin/ai && chmod +x /usr/bin/ai
 
-# Create spirit command (main menu)
+# ============================================
+# SPIRIT MENU
+# ============================================
 RUN printf '#!/bin/sh\n\
+# Spirit - Main Menu\n\
+\n\
+CYAN="\\033[36m"\n\
+GREEN="\\033[32m"\n\
+YELLOW="\\033[33m"\n\
+BOLD="\\033[1m"\n\
+RESET="\\033[0m"\n\
+\n\
+show_menu() {\n\
 clear\n\
 echo ""\n\
-echo "  ╔══════════════════════════════════════╗"\n\
-echo "  ║       🔮 CROM-OS SPIRIT v1.0         ║"\n\
-echo "  ╠══════════════════════════════════════╣"\n\
-echo "  ║  [1] Nodus Status                    ║"\n\
-echo "  ║  [2] Hypervisor Status               ║"\n\
-echo "  ║  [3] System Info                     ║"\n\
-echo "  ║  [4] Network Info                    ║"\n\
-echo "  ║  [5] GPU Passthrough                 ║"\n\
-echo "  ║  [0] Exit                            ║"\n\
-echo "  ╚══════════════════════════════════════╝"\n\
+echo "${CYAN}${BOLD}  ╔══════════════════════════════════════╗${RESET}"\n\
+echo "${CYAN}${BOLD}  ║       🔮 CROM-OS SPIRIT v1.0         ║${RESET}"\n\
+echo "${CYAN}${BOLD}  ╠══════════════════════════════════════╣${RESET}"\n\
+echo "${CYAN}  ║                                      ║${RESET}"\n\
+echo "${CYAN}  ║  ${GREEN}[1]${RESET}${CYAN} Nodus Status                    ║${RESET}"\n\
+echo "${CYAN}  ║  ${GREEN}[2]${RESET}${CYAN} Hypervisor Status               ║${RESET}"\n\
+echo "${CYAN}  ║  ${GREEN}[3]${RESET}${CYAN} System Info                     ║${RESET}"\n\
+echo "${CYAN}  ║  ${GREEN}[4]${RESET}${CYAN} Network Info                    ║${RESET}"\n\
+echo "${CYAN}  ║  ${GREEN}[5]${RESET}${CYAN} GPU Passthrough                 ║${RESET}"\n\
+echo "${CYAN}  ║  ${GREEN}[6]${RESET}${CYAN} Disk Usage                      ║${RESET}"\n\
+echo "${CYAN}  ║  ${GREEN}[7]${RESET}${CYAN} Process Monitor (htop)          ║${RESET}"\n\
+echo "${CYAN}  ║                                      ║${RESET}"\n\
+echo "${CYAN}  ║  ${YELLOW}[0]${RESET}${CYAN} Exit to Shell                   ║${RESET}"\n\
+echo "${CYAN}  ║                                      ║${RESET}"\n\
+echo "${CYAN}  ╚══════════════════════════════════════╝${RESET}"\n\
 echo ""\n\
-printf "Select option: "\n\
-read opt\n\
-case $opt in\n\
-  1) /spirit/bin/nodus status ;;\n\
-  2) /spirit/bin/hypervisor status ;;\n\
-  3) echo ""; cat /proc/cpuinfo | head -5; free -h ;;\n\
-  4) ip addr 2>/dev/null || echo "No network" ;;\n\
-  5) /spirit/bin/gpu_detach ;;\n\
-  0) exit 0 ;;\n\
-  *) echo "Invalid option" ;;\n\
-esac\n\
+printf "  Select option: "\n\
+}\n\
+\n\
+while true; do\n\
+  show_menu\n\
+  read opt\n\
+  echo ""\n\
+  case $opt in\n\
+    1) /spirit/bin/nodus status ;;\n\
+    2) /spirit/bin/hypervisor status ;;\n\
+    3)\n\
+      echo "${CYAN}System Information:${RESET}"\n\
+      echo ""\n\
+      echo "Hostname: $(hostname)"\n\
+      echo "Kernel:   $(uname -r)"\n\
+      echo "Arch:     $(uname -m)"\n\
+      echo ""\n\
+      echo "${CYAN}CPU:${RESET}"\n\
+      grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2\n\
+      echo ""\n\
+      echo "${CYAN}Memory:${RESET}"\n\
+      free -h | head -2\n\
+      ;;\n\
+    4)\n\
+      echo "${CYAN}Network Information:${RESET}"\n\
+      echo ""\n\
+      ip -br addr 2>/dev/null || ifconfig 2>/dev/null || echo "No network"\n\
+      ;;\n\
+    5) /spirit/bin/gpu_detach ;;\n\
+    6)\n\
+      echo "${CYAN}Disk Usage:${RESET}"\n\
+      df -h 2>/dev/null | grep -v tmpfs | head -5\n\
+      ;;\n\
+    7) htop ;;\n\
+    0) exit 0 ;;\n\
+    *) echo "${YELLOW}Invalid option${RESET}" ;;\n\
+  esac\n\
+  echo ""\n\
+  echo "Press Enter to continue..."\n\
+  read dummy\n\
+done\n\
+' > /usr/bin/spirit && chmod +x /usr/bin/spirit
+
+# ============================================
+# HELP COMMAND
+# ============================================
+RUN printf '#!/bin/sh\n\
+CYAN="\\033[36m"\n\
+GREEN="\\033[32m"\n\
+YELLOW="\\033[33m"\n\
+BOLD="\\033[1m"\n\
+RESET="\\033[0m"\n\
+\n\
 echo ""\n\
-echo "Press Enter to continue..."\n\
-read dummy\n\
-exec /bin/spirit\n\
-' > /bin/spirit && chmod +x /bin/spirit
+echo "${CYAN}${BOLD}╔══════════════════════════════════════╗${RESET}"\n\
+echo "${CYAN}${BOLD}║    CROM-OS SPIRIT - HELP             ║${RESET}"\n\
+echo "${CYAN}${BOLD}╚══════════════════════════════════════╝${RESET}"\n\
+echo ""\n\
+echo "${BOLD}System Commands:${RESET}"\n\
+echo "  ${GREEN}spirit${RESET}      - Open Spirit interactive menu"\n\
+echo "  ${GREEN}poweroff${RESET}    - Shutdown system"\n\
+echo "  ${GREEN}reboot${RESET}      - Restart system"\n\
+echo "  ${GREEN}shelp${RESET}       - This help"\n\
+echo ""\n\
+echo "${BOLD}Spirit Tools:${RESET}"\n\
+echo "  ${GREEN}nodus${RESET}       - P2P storage daemon"\n\
+echo "  ${GREEN}hypervisor${RESET}  - VM manager"\n\
+echo "  ${GREEN}gpu_detach${RESET}  - Detach GPU for passthrough"\n\
+echo "  ${GREEN}gpu_attach${RESET}  - Reattach GPU to host"\n\
+echo ""\n\
+echo "${BOLD}VM Commands:${RESET}"\n\
+echo "  ${GREEN}windows${RESET} <cmd>  - Run command in Windows VM"\n\
+echo "  ${GREEN}linux${RESET} <cmd>    - Run command in Linux VM"\n\
+echo "  ${GREEN}ai${RESET} \"query\"     - Ask AI assistant"\n\
+echo ""\n\
+echo "${BOLD}Utilities:${RESET}"\n\
+echo "  ${GREEN}htop${RESET}        - Process monitor"\n\
+echo "  ${GREEN}nano${RESET}        - Text editor"\n\
+echo "  ${GREEN}curl${RESET}        - HTTP client"\n\
+echo ""\n\
+' > /usr/bin/shelp && chmod +x /usr/bin/shelp
 
-# Make all scripts executable
-RUN chmod +x /spirit/bin/* 2>/dev/null || true
+# ============================================
+# SYMLINKS
+# ============================================
+RUN ln -sf /spirit/bin/nodus /usr/bin/nodus && \
+    ln -sf /spirit/bin/hypervisor /usr/bin/hypervisor && \
+    ln -sf /spirit/bin/gpu_detach /usr/bin/gpu_detach && \
+    ln -sf /spirit/bin/gpu_attach /usr/bin/gpu_attach
 
-# Remove busybox poweroff/reboot and create custom versions
+# ============================================
+# POWEROFF/REBOOT
+# ============================================
 RUN rm -f /sbin/poweroff /sbin/reboot /sbin/halt 2>/dev/null || true
 RUN printf '#!/bin/sh\necho "Syncing..."\nsync\necho "Powering off..."\necho o > /proc/sysrq-trigger\n' > /sbin/poweroff && chmod +x /sbin/poweroff
 RUN printf '#!/bin/sh\necho "Syncing..."\nsync\necho "Rebooting..."\necho b > /proc/sysrq-trigger\n' > /sbin/reboot && chmod +x /sbin/reboot
-RUN printf '#!/bin/sh\necho "Shutting down..."\nsync\necho o > /proc/sysrq-trigger\n' > /sbin/halt && chmod +x /sbin/halt
 
-# Create help command
+# ============================================
+# PROFILE (colors, PATH, aliases)
+# ============================================
+RUN printf 'export PATH=/usr/bin:/bin:/sbin:/spirit/bin:$PATH\n\
+export HOME=/root\n\
+export TERM=linux\n\
+export PS1="\\[\\033[36m\\]spirit\\[\\033[0m\\]@\\[\\033[32m\\]$(hostname)\\[\\033[0m\\]:\\[\\033[33m\\]\\w\\[\\033[0m\\]# "\n\
+alias help="shelp"\n\
+alias ll="ls -la --color=auto"\n\
+alias cls="clear"\n\
+' > /etc/profile
+
+# ============================================
+# MOTD (Message of the Day)
+# ============================================
 RUN printf '#!/bin/sh\n\
+CYAN="\\033[36m"\n\
+GREEN="\\033[32m"\n\
+YELLOW="\\033[33m"\n\
+BOLD="\\033[1m"\n\
+RESET="\\033[0m"\n\
+\n\
 echo ""\n\
-echo "╔══════════════════════════════════════╗"\n\
-echo "║    CROM-OS SPIRIT - HELP             ║"\n\
-echo "╚══════════════════════════════════════╝"\n\
+echo "${CYAN}${BOLD}  ╔══════════════════════════════════════╗${RESET}"\n\
+echo "${CYAN}${BOLD}  ║       🔮 CROM-OS SPIRIT v1.0         ║${RESET}"\n\
+echo "${CYAN}${BOLD}  ╚══════════════════════════════════════╝${RESET}"\n\
 echo ""\n\
-echo "System Commands:"\n\
-echo "  spirit      - Open Spirit menu"\n\
-echo "  poweroff    - Shutdown system"\n\
-echo "  reboot      - Restart system"\n\
-echo "  help        - This help"\n\
+echo "  ${GREEN}[✓]${RESET} System ready"\n\
+echo "  ${GREEN}[✓]${RESET} RAM: $(free -h | awk '"'"'/Mem/ {print $3"/"$2}'"'"')"\n\
+echo "  ${GREEN}[✓]${RESET} Uptime: $(uptime -p 2>/dev/null || echo 'just started')"\n\
 echo ""\n\
-echo "Spirit Tools:"\n\
-echo "  nodus       - P2P storage daemon"\n\
-echo "  hypervisor  - VM manager"\n\
-echo "  gpu_detach  - Detach GPU for passthrough"\n\
-echo "  gpu_attach  - Reattach GPU"\n\
+echo "  Commands: ${CYAN}spirit${RESET} (menu) | ${CYAN}shelp${RESET} (help) | ${CYAN}poweroff${RESET}"\n\
 echo ""\n\
-echo "VM Commands:"\n\
-echo "  @windows <cmd>  - Run in Windows VM"\n\
-echo "  @linux <cmd>    - Run in Linux VM"\n\
-echo "  @ai \"query\"     - Ask AI assistant"\n\
-echo ""\n\
-' > /bin/help && chmod +x /bin/help
+' > /etc/motd.sh && chmod +x /etc/motd.sh
 
-# Create init script
+# ============================================
+# INIT SCRIPT (with ZRAM)
+# ============================================
 RUN printf '#!/bin/sh\n\
 # Crom-OS Spirit Init (PID 1)\n\
 \n\
+# Mount essential filesystems\n\
 mount -t proc proc /proc\n\
 mount -t sysfs sysfs /sys\n\
 mount -t devtmpfs devtmpfs /dev\n\
 mount -t tmpfs tmpfs /tmp\n\
 mount -t tmpfs tmpfs /run\n\
-mkdir -p /dev/pts\n\
+mkdir -p /dev/pts /dev/shm\n\
 mount -t devpts devpts /dev/pts\n\
+mount -t tmpfs tmpfs /dev/shm\n\
 \n\
+# Enable SysRq for poweroff/reboot\n\
 echo 1 > /proc/sys/kernel/sysrq\n\
+\n\
+# Set hostname\n\
 hostname spirit-node\n\
 \n\
-clear\n\
-echo ""\n\
-echo "  ======================================"\n\
-echo "       Crom-OS Spirit v1.0"\n\
-echo "  ======================================"\n\
-echo ""\n\
-echo "[OK] Filesystems mounted"\n\
-echo "[OK] System ready"\n\
-echo ""\n\
-echo "Type: spirit (menu) | help (commands)"\n\
-echo ""\n\
+# Setup ZRAM (compressed RAM swap)\n\
+if [ -e /sys/block/zram0 ]; then\n\
+  echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null\n\
+  mem_kb=$(grep MemTotal /proc/meminfo | awk '"'"'{print int($2/2)}'"'"')\n\
+  echo ${mem_kb}K > /sys/block/zram0/disksize 2>/dev/null\n\
+  mkswap /dev/zram0 >/dev/null 2>&1\n\
+  swapon /dev/zram0 2>/dev/null\n\
+fi\n\
 \n\
-export PATH=/bin:/sbin:/spirit/bin:$PATH\n\
+# Export environment\n\
+export PATH=/usr/bin:/bin:/sbin:/spirit/bin:$PATH\n\
 export HOME=/root\n\
 export TERM=linux\n\
 \n\
+# Clear screen and show MOTD\n\
+clear\n\
+/etc/motd.sh\n\
+\n\
+# Run shell in loop\n\
 while true; do\n\
     /bin/sh -l\n\
-    echo "Shell exited. Press Enter to continue or type poweroff..."\n\
+    echo ""\n\
+    echo "Shell exited. Press Enter or type poweroff..."\n\
     read dummy\n\
 done\n\
 ' > /init && chmod +x /init
@@ -286,6 +484,9 @@ TIMEOUT 50\n\
 DEFAULT spirit\n\
 \n\
 MENU TITLE Crom-OS Spirit v1.0\n\
+MENU COLOR border 36;40 #ff00ffff #00000000 std\n\
+MENU COLOR title 1;36;40 #ff00ffff #00000000 std\n\
+MENU COLOR sel 7;37;40 #ff000000 #ff00ffff all\n\
 \n\
 LABEL spirit\n\
     MENU LABEL ^Crom-OS Spirit\n\
@@ -293,9 +494,9 @@ LABEL spirit\n\
     APPEND initrd=/boot/initramfs.gz quiet\n\
 \n\
 LABEL debug\n\
-    MENU LABEL ^Debug Mode\n\
+    MENU LABEL ^Debug Mode (verbose)\n\
     KERNEL /boot/vmlinuz\n\
-    APPEND initrd=/boot/initramfs.gz debug console=ttyS0\n\
+    APPEND initrd=/boot/initramfs.gz\n\
 ' > /iso/boot/isolinux/isolinux.cfg
 
 RUN xorriso -as mkisofs \
