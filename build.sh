@@ -1,99 +1,77 @@
 #!/bin/bash
 # Spirit Build & Test Script
-# Run this in Codespaces or any Linux environment with Docker
 
 set -e
 
-CYAN='\033[36m'
-GREEN='\033[32m'
-YELLOW='\033[33m'
-RED='\033[31m'
-RESET='\033[0m'
-
 echo ""
-echo -e "${CYAN}╔══════════════════════════════════════╗${RESET}"
-echo -e "${CYAN}║    🔮 Crom-OS Spirit Build Script    ║${RESET}"
-echo -e "${CYAN}╚══════════════════════════════════════╝${RESET}"
+echo "╔══════════════════════════════════════╗"
+echo "║    🔮 Crom-OS Spirit Build Script    ║"
+echo "╚══════════════════════════════════════╝"
 echo ""
 
-# Parse arguments
 ACTION=${1:-build}
 
 case $ACTION in
     build)
-        echo -e "${YELLOW}[1/3] Building Docker image...${RESET}"
+        echo "[1/3] Building Docker image..."
         docker build --target iso-builder -t spirit-iso-builder . --no-cache
         
-        echo -e "${YELLOW}[2/3] Extracting ISO...${RESET}"
+        echo "[2/3] Extracting ISO..."
         mkdir -p output
-        sudo docker run --rm spirit-iso-builder cat /spirit-v1.0.iso > output/spirit-v1.0.iso
+        docker run --rm spirit-iso-builder cat /spirit-v1.0.iso > output/spirit-v1.0.iso
         
-        echo -e "${YELLOW}[3/3] Verifying...${RESET}"
+        echo "[3/3] Done!"
         ls -lh output/spirit-v1.0.iso
         
         echo ""
-        echo -e "${GREEN}✅ Build complete!${RESET}"
-        echo -e "ISO location: ${CYAN}output/spirit-v1.0.iso${RESET}"
+        echo "✅ Build complete!"
+        echo "ISO: output/spirit-v1.0.iso"
         echo ""
-        echo "To test: ./build.sh test"
+        echo "To test locally (after download):"
+        echo "  qemu-system-x86_64 -cdrom spirit-v1.0.iso -m 1024"
         ;;
     
     test)
         if [ ! -f output/spirit-v1.0.iso ]; then
-            echo -e "${RED}❌ ISO not found. Run './build.sh build' first.${RESET}"
+            echo "❌ ISO not found. Run './build.sh build' first."
             exit 1
         fi
         
-        echo -e "${YELLOW}[*] Starting QEMU...${RESET}"
-        echo -e "${CYAN}Press Ctrl+Alt+G to release mouse${RESET}"
+        echo "[*] Starting QEMU (text mode for Codespaces)..."
+        echo "Press Ctrl+A then X to exit"
         echo ""
         
-        # Check if qemu is installed
+        # Install QEMU if needed
         if ! command -v qemu-system-x86_64 &> /dev/null; then
-            echo -e "${YELLOW}[*] Installing QEMU...${RESET}"
-            sudo apt-get update && sudo apt-get install -y qemu-system-x86
+            echo "[*] Installing QEMU..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86
         fi
         
-        qemu-system-x86_64 \
-            -cdrom output/spirit-v1.0.iso \
-            -m 1024 \
-            -enable-kvm 2>/dev/null || \
-        qemu-system-x86_64 \
-            -cdrom output/spirit-v1.0.iso \
-            -m 1024
-        ;;
-    
-    test-nographic)
-        if [ ! -f output/spirit-v1.0.iso ]; then
-            echo -e "${RED}❌ ISO not found. Run './build.sh build' first.${RESET}"
-            exit 1
-        fi
-        
-        echo -e "${YELLOW}[*] Starting QEMU (text mode)...${RESET}"
-        echo -e "${CYAN}Press Ctrl+A then X to exit${RESET}"
-        echo ""
-        
+        # Text mode for Codespaces (no GTK)
         qemu-system-x86_64 \
             -cdrom output/spirit-v1.0.iso \
             -m 512 \
             -nographic \
-            -append "console=ttyS0"
+            -serial mon:stdio \
+            -boot d
         ;;
     
     clean)
-        echo -e "${YELLOW}[*] Cleaning...${RESET}"
+        echo "[*] Cleaning..."
         rm -rf output/
         docker rmi spirit-iso-builder 2>/dev/null || true
-        echo -e "${GREEN}✅ Clean complete${RESET}"
+        echo "✅ Clean complete"
         ;;
     
     *)
         echo "Usage: ./build.sh [command]"
         echo ""
         echo "Commands:"
-        echo "  build          - Build the ISO (default)"
-        echo "  test           - Test ISO in QEMU (graphical)"
-        echo "  test-nographic - Test ISO in QEMU (text mode)"
-        echo "  clean          - Remove build artifacts"
+        echo "  build  - Build the ISO"
+        echo "  test   - Test in QEMU (text mode)"
+        echo "  clean  - Remove artifacts"
+        echo ""
+        echo "For graphical test (after download):"
+        echo "  qemu-system-x86_64 -cdrom spirit-v1.0.iso -m 1024"
         ;;
 esac
