@@ -26,6 +26,9 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/nexus ./cmd/nexus 2>&1 || e
 # Build Hotkey Daemon
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/hotkeyd ./cmd/hotkeyd 2>&1 || echo "hotkeyd skipped"
 
+# Build Spirit AI
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/ai ./cmd/ai 2>&1 || echo "ai skipped"
+
 RUN mkdir -p build && ls -la build/
 
 # Stage 2: Create feature-rich rootfs
