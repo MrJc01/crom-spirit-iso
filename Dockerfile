@@ -69,63 +69,17 @@ RUN chmod +x /spirit/bin/* 2>/dev/null || true
 # SPIRIT TOOLS - NODUS
 # ============================================
 RUN printf '#!/bin/sh\n\
-# Nodus - P2P Storage Daemon\n\
-\n\
-CYAN="\\033[36m"\n\
-GREEN="\\033[32m"\n\
-YELLOW="\\033[33m"\n\
-RESET="\\033[0m"\n\
-\n\
 echo ""\n\
-echo "${CYAN}╔══════════════════════════════════════╗${RESET}"\n\
-echo "${CYAN}║      NODUS - P2P Storage             ║${RESET}"\n\
-echo "${CYAN}╚══════════════════════════════════════╝${RESET}"\n\
+echo "NODUS - P2P Storage"\n\
 echo ""\n\
-\n\
 case "$1" in\n\
-  discover)\n\
-    echo "${YELLOW}[*] Discovering peers on LAN...${RESET}"\n\
-    echo "    Broadcast UDP:7331..."\n\
-    sleep 1\n\
-    echo "${GREEN}[✓] Discovery complete${RESET}"\n\
-    echo "    Peers found: 0 (standalone mode)"\n\
-    ;;\n\
-  peers)\n\
-    echo "Connected Peers:"\n\
-    echo "  (No peers connected)"\n\
-    echo ""\n\
-    echo "Use ${CYAN}nodus discover${RESET} to find peers"\n\
-    ;;\n\
-  mount)\n\
-    echo "${YELLOW}[*] Mounting Nodus volume...${RESET}"\n\
-    mkdir -p /mnt/nodus\n\
-    mount -t tmpfs -o size=256M tmpfs /mnt/nodus 2>/dev/null\n\
-    echo "${GREEN}[✓] Mounted at /mnt/nodus (256MB cache)${RESET}"\n\
-    ;;\n\
-  sync)\n\
-    echo "${YELLOW}[*] Syncing to network...${RESET}"\n\
-    sync\n\
-    echo "${GREEN}[✓] Sync complete${RESET}"\n\
-    ;;\n\
-  status)\\n\\
-    echo "Nodus Status:"\n\
-    echo "  Mode:    ${GREEN}Standalone${RESET}"\n\
-    echo "  Cache:   /mnt/nodus"\n\
-    echo "  Peers:   0"\n\
-    echo "  Storage: $(df -h /mnt/nodus 2>/dev/null | tail -1 | awk '"'"'{print $3"/"$2}'"'"' || echo '"'"'Not mounted'"'"')"\n\
-    ;;\n\
-  *)\n\
-    echo "Usage: nodus <command>"\n\
-    echo ""\n\
-    echo "Commands:"\n\
-    echo "  ${CYAN}discover${RESET}  - Find peers on LAN"\n\
-    echo "  ${CYAN}peers${RESET}     - List connected peers"\n\
-    echo "  ${CYAN}mount${RESET}     - Mount Nodus volume"\n\
-    echo "  ${CYAN}sync${RESET}      - Sync to network"\n\
-    echo "  ${CYAN}status${RESET}    - Show status"\n\
-    ;;\n\
+  discover) echo "[*] Discovering peers..." ; sleep 1 ; echo "[OK] 0 peers found" ;;\n\
+  peers) echo "Connected Peers: (none)" ;;\n\
+  mount) mkdir -p /mnt/nodus ; mount -t tmpfs tmpfs /mnt/nodus 2>/dev/null ; echo "[OK] Mounted" ;;\n\
+  sync) sync ; echo "[OK] Synced" ;;\n\
+  status) echo "Mode: Standalone" ; echo "Peers: 0" ;;\n\
+  *) echo "Usage: nodus <discover|peers|mount|sync|status>" ;;\n\
 esac\n\
-echo ""\n\
 exit 0\n\
 ' > /spirit/bin/nodus && chmod +x /spirit/bin/nodus
 
