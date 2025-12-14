@@ -390,25 +390,19 @@ alias cls="clear"\n\
 ' > /etc/profile
 
 # ============================================
-# MOTD (Message of the Day)
+# MOTD (Message of the Day) - Simplified
 # ============================================
 RUN printf '#!/bin/sh\n\
-CYAN="\\033[36m"\n\
-GREEN="\\033[32m"\n\
-YELLOW="\\033[33m"\n\
-BOLD="\\033[1m"\n\
-RESET="\\033[0m"\n\
-\n\
 echo ""\n\
-echo "${CYAN}${BOLD}  ╔══════════════════════════════════════╗${RESET}"\n\
-echo "${CYAN}${BOLD}  ║       🔮 CROM-OS SPIRIT v1.0         ║${RESET}"\n\
-echo "${CYAN}${BOLD}  ╚══════════════════════════════════════╝${RESET}"\n\
+echo "  ======================================"\n\
+echo "       CROM-OS SPIRIT v1.0"\n\
+echo "  ======================================"\n\
 echo ""\n\
-echo "  ${GREEN}[✓]${RESET} System ready"\n\
-echo "  ${GREEN}[✓]${RESET} RAM: $(free -h | awk '"'"'/Mem/ {print $3"/"$2}'"'"')"\n\
-echo "  ${GREEN}[✓]${RESET} Uptime: $(uptime -p 2>/dev/null || echo 'just started')"\n\
+echo "  [OK] System ready"\n\
+MEM=$(free -m | awk "/Mem/ {printf \"%%dMB/%%dMB\", \\$3, \\$2}")\n\
+echo "  [OK] RAM: $MEM"\n\
 echo ""\n\
-echo "  Commands: ${CYAN}spirit${RESET} (menu) | ${CYAN}shelp${RESET} (help) | ${CYAN}poweroff${RESET}"\n\
+echo "  Commands: spirit (menu) | shelp (help) | poweroff"\n\
 echo ""\n\
 ' > /etc/motd.sh && chmod +x /etc/motd.sh
 
