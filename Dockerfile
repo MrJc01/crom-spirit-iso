@@ -186,39 +186,8 @@ echo "${CYAN}[Spirit → Linux]${RESET} $*"\n\
 echo "${YELLOW}(Linux VM not running - use: hypervisor start linux)${RESET}"\n\
 ' > /usr/bin/linux && chmod +x /usr/bin/linux
 
-RUN printf '#!/bin/sh\n\
-CYAN="\\033[36m"\n\
-YELLOW="\\033[33m"\n\
-GREEN="\\033[32m"\n\
-RESET="\\033[0m"\n\
-echo ""\n\
-echo "${CYAN}🤖 Spirit AI Assistant${RESET}"\n\
-echo ""\n\
-if [ -z "$1" ]; then\n\
-  echo "Usage: ai \"\\\"your question\\\"\""\n\
-  echo ""\n\
-  echo "Examples:"\n\
-  echo "  ai \"\\\"why is my PC slow?\\\"\""\n\
-  echo "  ai \"\\\"clean up disk space\\\"\""\n\
-  echo "  ai status"\n\
-else\n\
-  case "$1" in\n\
-    status)\n\
-      echo "AI Status:"\n\
-      echo "  Model:  ${YELLOW}Not loaded${RESET}"\n\
-      echo "  Engine: Llama.cpp (planned)"\n\
-      ;;\n\
-    *)\n\
-      echo "${GREEN}Q:${RESET} $*"\n\
-      echo ""\n\
-      echo "${CYAN}A:${RESET} Eu sou o Spirit, a alma do seu computador! 🔮"\n\
-      echo "   A funcionalidade de IA requer o modelo Llama."\n\
-      echo "   Por enquanto, use os comandos: spirit, nodus, hypervisor"\n\
-      ;;\n\
-  esac\n\
-fi\n\
-echo ""\n\
-' > /usr/bin/ai && chmod +x /usr/bin/ai
+# AI command - use Go binary (with Gemini API)
+RUN ln -sf /spirit/bin/ai /usr/bin/ai
 
 # ============================================
 # SPIRIT MENU
