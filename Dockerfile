@@ -23,6 +23,9 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/hypervisor ./cmd/hypervisor
 # Build Nexus HUD (framebuffer UI)
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/nexus ./cmd/nexus 2>&1 || echo "nexus skipped"
 
+# Build Hotkey Daemon
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/hotkeyd ./cmd/hotkeyd 2>&1 || echo "hotkeyd skipped"
+
 RUN mkdir -p build && ls -la build/
 
 # Stage 2: Create feature-rich rootfs
@@ -410,6 +413,11 @@ export TERM=linux\n\
 # Clear screen and show MOTD\n\
 clear\n\
 /etc/motd.sh\n\
+\n\
+# Start hotkey daemon in background (for graphical mode)\n\
+if [ -e /spirit/bin/hotkeyd ]; then\n\
+  /spirit/bin/hotkeyd &\n\
+fi\n\
 \n\
 # Run shell in loop\n\
 while true; do\n\
