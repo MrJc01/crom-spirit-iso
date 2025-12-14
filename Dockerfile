@@ -491,12 +491,12 @@ MENU COLOR sel 7;37;40 #ff000000 #ff00ffff all\n\
 LABEL spirit\n\
     MENU LABEL ^Crom-OS Spirit\n\
     KERNEL /boot/vmlinuz\n\
-    APPEND initrd=/boot/initramfs.gz quiet\n\
+    APPEND initrd=/boot/initramfs.gz console=tty0 console=ttyS0,115200\n\
 \n\
 LABEL debug\n\
     MENU LABEL ^Debug Mode (verbose)\n\
     KERNEL /boot/vmlinuz\n\
-    APPEND initrd=/boot/initramfs.gz\n\
+    APPEND initrd=/boot/initramfs.gz console=tty0 console=ttyS0,115200\n\
 ' > /iso/boot/isolinux/isolinux.cfg
 
 RUN xorriso -as mkisofs \
