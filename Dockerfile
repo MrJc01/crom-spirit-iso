@@ -60,6 +60,7 @@ RUN mkdir -p /home/spirit /etc/spirit
 COPY --from=builder /spirit/build/ /spirit/bin/
 COPY --from=builder /spirit/scripts/gpu_detach.sh /spirit/bin/gpu_detach
 COPY --from=builder /spirit/scripts/gpu_attach.sh /spirit/bin/gpu_attach
+COPY --from=builder /spirit/scripts/test_system.sh /spirit/bin/test
 
 # ============================================
 # SPIRIT TOOLS - NODUS
