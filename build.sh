@@ -1,5 +1,5 @@
 #!/bin/bash
-# Spirit Build & Test Script
+# Spirit Build & Test Script v2.0
 
 set -e
 
@@ -27,8 +27,9 @@ case $ACTION in
         echo "✅ Build complete!"
         echo "ISO: output/spirit-v1.0.iso"
         echo ""
-        echo "To test locally (after download):"
-        echo "  qemu-system-x86_64 -cdrom spirit-v1.0.iso -m 1024"
+        echo "Commands:"
+        echo "  ./build.sh test      - Test (no network)"
+        echo "  ./build.sh test-net  - Test (with network for AI)"
         ;;
     
     test)
@@ -37,7 +38,7 @@ case $ACTION in
             exit 1
         fi
         
-        echo "[*] Starting QEMU (text mode for Codespaces)..."
+        echo "[*] Starting QEMU (text mode, no network)..."
         echo "Press Ctrl+A then X to exit"
         echo ""
         
@@ -47,13 +48,42 @@ case $ACTION in
             sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86
         fi
         
-        # Text mode for Codespaces (no GTK)
         qemu-system-x86_64 \
             -cdrom output/spirit-v1.0.iso \
             -m 512 \
             -nographic \
             -serial mon:stdio \
             -boot d
+        ;;
+    
+    test-net)
+        if [ ! -f output/spirit-v1.0.iso ]; then
+            echo "❌ ISO not found. Run './build.sh build' first."
+            exit 1
+        fi
+        
+        echo "[*] Starting QEMU (text mode, WITH network)..."
+        echo "Press Ctrl+A then X to exit"
+        echo ""
+        echo "To use AI with Gemini:"
+        echo "  export GEMINI_API_KEY='your-key'"
+        echo "  ai"
+        echo ""
+        
+        # Install QEMU if needed
+        if ! command -v qemu-system-x86_64 &> /dev/null; then
+            echo "[*] Installing QEMU..."
+            sudo apt-get update -qq && sudo apt-get install -y -qq qemu-system-x86
+        fi
+        
+        qemu-system-x86_64 \
+            -cdrom output/spirit-v1.0.iso \
+            -m 1024 \
+            -nographic \
+            -serial mon:stdio \
+            -boot d \
+            -netdev user,id=net0 \
+            -device e1000,netdev=net0
         ;;
     
     clean)
@@ -67,11 +97,9 @@ case $ACTION in
         echo "Usage: ./build.sh [command]"
         echo ""
         echo "Commands:"
-        echo "  build  - Build the ISO"
-        echo "  test   - Test in QEMU (text mode)"
-        echo "  clean  - Remove artifacts"
-        echo ""
-        echo "For graphical test (after download):"
-        echo "  qemu-system-x86_64 -cdrom spirit-v1.0.iso -m 1024"
+        echo "  build     - Build the ISO"
+        echo "  test      - Test in QEMU (no network)"
+        echo "  test-net  - Test in QEMU (with network for AI)"
+        echo "  clean     - Remove artifacts"
         ;;
 esac
