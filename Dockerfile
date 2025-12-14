@@ -20,6 +20,9 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/nodus ./cmd/nodus 2>&1 || e
 # Build pure Go hypervisor (no libvirt CGO)
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/hypervisor ./cmd/hypervisor 2>&1 || echo "hypervisor skipped"
 
+# Build Nexus HUD (framebuffer UI)
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o build/nexus ./cmd/nexus 2>&1 || echo "nexus skipped"
+
 RUN mkdir -p build && ls -la build/
 
 # Stage 2: Create feature-rich rootfs
@@ -64,6 +67,9 @@ COPY --from=builder /spirit/scripts/test_system.sh /spirit/bin/test
 
 # Make all scripts executable
 RUN chmod +x /spirit/bin/* 2>/dev/null || true
+
+# Create symlinks for easy access
+RUN ln -sf /spirit/bin/nexus /usr/bin/nexus 2>/dev/null || true
 
 # ============================================
 # SPIRIT TOOLS - NODUS
