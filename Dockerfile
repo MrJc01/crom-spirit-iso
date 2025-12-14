@@ -107,7 +107,7 @@ case "$1" in\n\
     sync\n\
     echo "${GREEN}[✓] Sync complete${RESET}"\n\
     ;;\n\
-  status)
+  status)\\n\\
     echo "Nodus Status:"\n\
     echo "  Mode:    ${GREEN}Standalone${RESET}"\n\
     echo "  Cache:   /mnt/nodus"\n\
